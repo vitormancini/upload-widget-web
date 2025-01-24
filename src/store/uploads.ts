@@ -45,6 +45,18 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
         }
       }
 
+      function updateUpload(uploadId: string, data: Partial<Upload>) {
+        const upload = get().uploads.get(uploadId);
+
+        if (!upload) {
+          return;
+        }
+
+        set(state => {
+          state.uploads.set(uploadId, { ...upload, ...data })
+        });
+      }
+
       function cancelUpload(uploadId: string) {
         const upload = get().uploads.get(uploadId);
 
@@ -73,35 +85,24 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
           await uploadFileToStorage({ 
             file: upload.file, 
             onProgress(sizeInBytes) {
-              set((state) => {
-                state.uploads.set(uploadId, {
-                    ...upload,
-                    uploadSizeInBytes: sizeInBytes
-                });
+              updateUpload(uploadId, {
+                uploadSizeInBytes: sizeInBytes,
               });
-            } }, { signal: upload.abortController.signal })
+            } 
+          }, 
+          { signal: upload.abortController.signal })
 
-          set((state) => {
-            state.uploads.set(uploadId, {
-                ...upload,
-                status: "success"
+            updateUpload(uploadId, {
+              status: "success",
             });
-          });
         } catch (err) {
-
           if (err instanceof CanceledError) {
-            set((state) => {
-              state.uploads.set(uploadId, {
-                  ...upload,
-                  status: "canceled"
-              });
+            updateUpload(uploadId, {
+              status: "canceled",
             });
           } else {
-            set((state) => {
-              state.uploads.set(uploadId, {
-                  ...upload,
-                  status: "error"
-              });
+            updateUpload(uploadId, {
+              status: "error",
             });
           }
         }
@@ -114,3 +115,36 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
       };
     })
 );
+
+export const usePendingUploads = () => {
+  // Obtem os uploads com status = progress
+  const uploadsStore = useUploads(store => store.uploads);
+  const uploads = Array.from(uploadsStore.values());
+  const isThereAnyPendingUploads = uploads.some(upload => upload.status === "progress");
+
+  if (!isThereAnyPendingUploads) {
+    return {
+      isThereAnyPendingUploads,
+      globalPercentage: 100
+    };
+  }
+
+  const { total, uploaded } = uploads.reduce(
+    (acc, upload) => {
+      acc.total += upload.originalSizeInBytes;
+      acc.uploaded += upload.uploadSizeInBytes;
+      return acc;
+    },
+    { total: 0, uploaded: 0 }
+  );
+
+  const globalPercentage = Math.min(
+    Math.round((uploaded * 100) / total),
+    100
+  );
+
+  return {
+        isThereAnyPendingUploads,
+        globalPercentage
+    };
+}
