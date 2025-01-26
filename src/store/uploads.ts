@@ -3,6 +3,7 @@ import { enableMapSet } from "immer";
 import { immer } from "zustand/middleware/immer";
 import { uploadFileToStorage } from "../http/upload-file-to-storage";
 import { CanceledError } from "axios";
+import { compressImage } from "../utils/compress-image";
 
 export type Upload = {
     name: string;
@@ -10,7 +11,9 @@ export type Upload = {
     abortController: AbortController;
     status: "progress" | "success" | "error" | "canceled";
     uploadSizeInBytes: number;
-    originalSizeInBytes: number
+    originalSizeInBytes: number,
+    compressedSizeInBytes?: number,
+    remoteUrl?: string
 };
 
 type UploadState = {
@@ -82,8 +85,18 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
         }
 
         try {
-          await uploadFileToStorage({ 
-            file: upload.file, 
+
+          const compressedFile = await compressImage({
+            file: upload.file,
+            maxHeight: 1000,
+            maxWidth: 1000,
+            quality: 0.8
+          })
+
+          updateUpload(uploadId, { compressedSizeInBytes: compressedFile.size })
+
+          const { url } = await uploadFileToStorage({ 
+            file: compressedFile, 
             onProgress(sizeInBytes) {
               updateUpload(uploadId, {
                 uploadSizeInBytes: sizeInBytes,
@@ -94,6 +107,7 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
 
             updateUpload(uploadId, {
               status: "success",
+              remoteUrl: url
             });
         } catch (err) {
           if (err instanceof CanceledError) {
@@ -131,8 +145,12 @@ export const usePendingUploads = () => {
 
   const { total, uploaded } = uploads.reduce(
     (acc, upload) => {
-      acc.total += upload.originalSizeInBytes;
-      acc.uploaded += upload.uploadSizeInBytes;
+      if(upload.compressedSizeInBytes) {
+        acc.uploaded += upload.uploadSizeInBytes
+      }
+
+      acc.total += upload.compressedSizeInBytes || upload.originalSizeInBytes
+
       return acc;
     },
     { total: 0, uploaded: 0 }
