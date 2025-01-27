@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { Upload, useUploads } from "../store/uploads";
 import { formatBytes } from "../utils/format-bytes";
 import { formatFileName } from "../utils/format-file-name";
+import { downloadUrl } from "../utils/download-url";
 
 interface UploadWidgetUploadItemProps {
     uploadId: string,
@@ -14,6 +15,7 @@ interface UploadWidgetUploadItemProps {
 export function UploadWidgetUploadItem({ uploadId, upload }: UploadWidgetUploadItemProps) {
 
     const cancelUpload = useUploads(store => store.cancelUpload);
+    const retryUpload = useUploads(store => store.retryUpload)
 
     const progress = Math.min(
         upload.compressedSizeInBytes
@@ -44,8 +46,10 @@ export function UploadWidgetUploadItem({ uploadId, upload }: UploadWidgetUploadI
                     <span className="line-through">{ formatBytes(upload.originalSizeInBytes) }</span>
                     <div className="size-1 rounded-full bg-zinc-700"></div>
                     <span>
-                        300KB
-                        <span className="text-indigo-400 ml-1">-94%</span>
+                        { formatBytes(upload.compressedSizeInBytes ?? 0) }
+                        { upload.compressedSizeInBytes && (
+                            <span className="text-indigo-400 ml-1">-{ Math.round((upload.originalSizeInBytes - upload.compressedSizeInBytes) * 100 / upload.originalSizeInBytes) }%</span>
+                        )}
                     </span>
                     <div className="size-1 rounded-full bg-zinc-700"></div>
                     
@@ -69,9 +73,11 @@ export function UploadWidgetUploadItem({ uploadId, upload }: UploadWidgetUploadI
             </Progress.Root>
 
             <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
-                <Button disabled={ upload.status !== "success" } size="icon-sm">
-                    <Download className="size-4" strokeWidth={1.5} />
-                    <span className="sr-only">Download compressed image</span>
+                <Button aria-disabled={ upload.status !== "success" } size="icon-sm" asChild onClick={() => downloadUrl(upload.remoteUrl!)}>
+                    <a href={upload.remoteUrl}>
+                        <Download className="size-4" strokeWidth={1.5} />
+                        <span className="sr-only">Download compressed image</span>
+                    </a>
                 </Button>
 
                 <Button disabled={ !upload.remoteUrl } onClick={() => upload.remoteUrl && navigator.clipboard.writeText(upload.remoteUrl)} size="icon-sm">
@@ -79,7 +85,7 @@ export function UploadWidgetUploadItem({ uploadId, upload }: UploadWidgetUploadI
                     <span className="sr-only">Copy remote URL</span>
                 </Button>
 
-                <Button disabled={ !["canceled", "error"].includes(upload.status) } size="icon-sm">
+                <Button disabled={ !["canceled", "error"].includes(upload.status) } size="icon-sm" onClick={() => retryUpload(uploadId)}>
                     <RefreshCcw className="size-4" strokeWidth={1.5} />
                     <span className="sr-only">Retry upload</span>
                 </Button>
